@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #video-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            overflow: hidden;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        #qr-video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        #scan-region {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 200px;
+            height: 200px;
+            transform: translate(-50%, -50%);
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+            box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f5f5f5;
+            word-break: break-all;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<h1>QR Code Scanner</h1>
+
+<div id="video-container" class="hidden">
+    <video id="qr-video" playsinline></video>
+    <div id="scan-region"></div>
+</div>
+
+<div id="buttons">
+    <button id="start-button" class="btn">Start Scanner</button>
+    <button id="stop-button" class="btn" disabled>Stop Scanner</button>
+</div>
+
+<div id="result" class="hidden">
+    <h3>Scan Result:</h3>
+    <p id="result-text"></p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const videoElement = document.getElementById('qr-video');
+        const videoContainer = document.getElementById('video-container');
+        const startButton = document.getElementById('start-button');
+        const stopButton = document.getElementById('stop-button');
+        const resultDiv = document.getElementById('result');
+        const resultText = document.getElementById('result-text');
+
+        let stream = null;
+        let scanning = false;
+        let canvasElement = document.createElement('canvas');
+        let canvas = canvasElement.getContext('2d');
+
+        // Check if the browser supports the MediaDevices API
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Your browser does not support accessing the camera. Please try a different browser.');
+            startButton.disabled = true;
+            return;
+        }
+
+        startButton.addEventListener('click', startScanner);
+        stopButton.addEventListener('click', stopScanner);
+
+        function startScanner() {
+            // Request camera access
+            navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'environment',  // Prefer rear camera if available
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            })
+                .then(function(mediaStream) {
+                    stream = mediaStream;
+                    videoElement.srcObject = stream;
+                    videoElement.setAttribute('playsinline', true); // required for iOS
+                    videoElement.play();
+                    scanning = true;
+                    videoContainer.classList.remove('hidden');
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                    resultDiv.classList.add('hidden');
+
+                    // Start scanning for QR codes
+                    requestAnimationFrame(tick);
+                })
+                .catch(function(error) {
+                    console.error("Error accessing the camera: ", error);
+                    alert("Error accessing the camera: " + error.message);
+                });
+        }
+
+        function stopScanner() {
+            if (stream) {
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                });
+                stream = null;
+            }
+            scanning = false;
+            videoContainer.classList.add('hidden');
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        }
+
+        function tick() {
+            if (!scanning) return;
+
+            if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                // Draw video frame to the canvas
+                canvasElement.height = videoElement.videoHeight;
+                canvasElement.width = videoElement.videoWidth;
+                canvas.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+
+                // Get image data from the canvas
+                const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+
+                // Process image data with jsQR
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+
+                // If a QR code is found
+                if (code) {
+                    console.log("QR Code detected: ", code.data);
+
+                    // Display the result
+                    resultText.textContent = code.data;
+                    resultDiv.classList.remove('hidden');
+
+                    // Optional: play a sound to indicate successful scan
+                    const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU..."
+                        // Beep sound data truncated for brevity
+                    );
+                    beep.play().catch(e => console.log("Audio play error:", e));
+
+                    // Stop scanning after successful detection
+                    stopScanner();
+                    return;
+                }
+            }
+
+            // Continue scanning
+            requestAnimationFrame(tick);
+        }
+    });
+</script>
+</body>
+</html>
